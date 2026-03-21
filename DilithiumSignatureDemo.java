@@ -8,6 +8,8 @@
  */
 
 import java.security.*;
+import java.util.Base64;
+
 public class DilithiumSignatureDemo {
     // Default algorithm: ML-DSA-65 (balanced security and performance)
     private static final String DEFAULT_ALGORITHM = "ML-DSA";
@@ -34,6 +36,16 @@ public class DilithiumSignatureDemo {
         System.out.println("    ✓ Key pair generated successfully");
         System.out.println("    - Public Key Algorithm: " + kp.getPublic().getAlgorithm());
         System.out.println("    - Private Key Algorithm: " + kp.getPrivate().getAlgorithm());
+        
+        // Export public key in PKCS #8 format
+        byte[] publicKeyEncoded = kp.getPublic().getEncoded();
+        System.out.println("\n    Public Key (PKCS #8 encoded):");
+        System.out.println("    - Encoded length: " + publicKeyEncoded.length + " bytes");
+        System.out.println("    - Format: " + kp.getPublic().getFormat());
+        System.out.println("    - Base64 encoded:");
+        System.out.println("-----BEGIN PUBLIC KEY-----");
+        System.out.println(Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(publicKeyEncoded));
+        System.out.println("-----END PUBLIC KEY-----");
         
         // Message Setup
         String message = "Post-Quantum Java is here!";
