@@ -8,6 +8,8 @@
  */
 
 import java.security.*;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
 public class DilithiumSignatureDemo {
@@ -37,15 +39,27 @@ public class DilithiumSignatureDemo {
         System.out.println("    - Public Key Algorithm: " + kp.getPublic().getAlgorithm());
         System.out.println("    - Private Key Algorithm: " + kp.getPrivate().getAlgorithm());
         
-        // Export public key in PKCS #8 format
+        // Export public key in X.509 format
         byte[] publicKeyEncoded = kp.getPublic().getEncoded();
-        System.out.println("\n    Public Key (PKCS #8 encoded):");
-        System.out.println("    - Encoded length: " + publicKeyEncoded.length + " bytes");
+        X509EncodedKeySpec x509KeySpec = new X509EncodedKeySpec(publicKeyEncoded);
+        System.out.println("\n    Public Key (X.509 encoded):");
+        System.out.println("    - Encoded length: " + x509KeySpec.getEncoded().length + " bytes");
         System.out.println("    - Format: " + kp.getPublic().getFormat());
         System.out.println("    - Base64 encoded:");
         System.out.println("-----BEGIN PUBLIC KEY-----");
-        System.out.println(Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(publicKeyEncoded));
+        System.out.println(Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(x509KeySpec.getEncoded()));
         System.out.println("-----END PUBLIC KEY-----");
+        
+        // Export private key in PKCS #8 format
+        byte[] privateKeyEncoded = kp.getPrivate().getEncoded();
+        PKCS8EncodedKeySpec pkcs8KeySpec = new PKCS8EncodedKeySpec(privateKeyEncoded);
+        System.out.println("\n    Private Key (PKCS #8 encoded):");
+        System.out.println("    - Encoded length: " + pkcs8KeySpec.getEncoded().length + " bytes");
+        System.out.println("    - Format: " + kp.getPrivate().getFormat());
+        System.out.println("    - Base64 encoded:");
+        System.out.println("-----BEGIN PRIVATE KEY-----");
+        System.out.println(Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(pkcs8KeySpec.getEncoded()));
+        System.out.println("-----END PRIVATE KEY-----");
         
         // Message Setup
         String message = "Post-Quantum Java is here!";
