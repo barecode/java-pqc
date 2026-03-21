@@ -25,8 +25,17 @@ chmod +x compile.sh run.sh
 ```
 
 ### 3. Run the demo
+
+Run with default algorithm (ML-DSA):
 ```bash
 ./run.sh
+```
+
+Or specify a specific algorithm variant:
+```bash
+./jdk-25.0.2+10/Contents/Home/bin/java DilithiumSignatureDemo ML-DSA-44
+./jdk-25.0.2+10/Contents/Home/bin/java DilithiumSignatureDemo ML-DSA-65
+./jdk-25.0.2+10/Contents/Home/bin/java DilithiumSignatureDemo ML-DSA-87
 ```
 
 ## Expected Output
@@ -45,6 +54,21 @@ The demo performs the following steps:
 2. **Signing**: Signs the message "Post-Quantum Java is here!" with the private key
 3. **Verification**: Verifies the signature using the public key
 4. **Result**: Displays whether the signature is valid
+
+## Algorithm Variants
+
+ML-DSA supports three security levels (from JEP 497):
+
+| Algorithm | Security Level | Signature Size | Performance |
+|-----------|---------------|----------------|-------------|
+| ML-DSA-44 | ~128-bit | ~2420 bytes | Fastest |
+| ML-DSA-65 | ~192-bit | ~3309 bytes | Balanced (Default) |
+| ML-DSA-87 | ~256-bit | ~4627 bytes | Most Secure |
+
+You can specify the algorithm variant as a command-line argument:
+```bash
+./jdk-25.0.2+10/Contents/Home/bin/java DilithiumSignatureDemo ML-DSA-87
+```
 
 ## Technical Details
 

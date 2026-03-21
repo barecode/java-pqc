@@ -3,18 +3,33 @@
  * Min requirements: JDK 24 - https://openjdk.org/projects/jdk/24/
  * Related reading: 
  * - https://openjdk.org/jeps/497 "JEP 497: Quantum-Resistant Module-Lattice-Based Digital Signature Algorithm"
+     - In order of increasing security strength and decreasing performance, they are named "ML-DSA-44", "ML-DSA-65" (DEFAULT), and "ML-DSA-87".
  * - https://openjdk.org/jeps/496 "JEP 496: Quantum-Resistant Module-Lattice-Based Key Encapsulation Mechanism"
  */
 
 import java.security.*;
 public class DilithiumSignatureDemo {
+    // Default algorithm: ML-DSA-65 (balanced security and performance)
+    private static final String DEFAULT_ALGORITHM = "ML-DSA";
+    
     public static void main(String[] args) throws Exception {
+        // Parse command line argument for algorithm, or use default
+        String algorithm = DEFAULT_ALGORITHM;
+        if (args.length > 0) {
+            algorithm = args[0];
+            System.out.println("Using algorithm from command line: " + algorithm);
+        } else {
+            System.out.println("Using default algorithm: " + algorithm);
+            System.out.println("(You can specify a different algorithm as a command line argument)");
+            System.out.println("Available options: ML-DSA, ML-DSA-44, ML-DSA-65, ML-DSA-87\n");
+        }
+        
         System.out.println("=== Post-Quantum Cryptography Demo ===");
-        System.out.println("Algorithm: ML-DSA (Module-Lattice-Based Digital Signature)\n");
+        System.out.println("Algorithm: " + algorithm + " (Module-Lattice-Based Digital Signature)\n");
         
         // Key Generation
         System.out.println("[1] Generating quantum-resistant key pair...");
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("ML-DSA");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(algorithm);
         KeyPair kp = kpg.generateKeyPair();
         System.out.println("    ✓ Key pair generated successfully");
         System.out.println("    - Public Key Algorithm: " + kp.getPublic().getAlgorithm());
@@ -28,7 +43,7 @@ public class DilithiumSignatureDemo {
         
         // Signing
         System.out.println("\n[3] Signing message with private key...");
-        Signature sig = Signature.getInstance("ML-DSA");
+        Signature sig = Signature.getInstance(algorithm);
         sig.initSign(kp.getPrivate());
         sig.update(messageBytes);
         byte[] signature = sig.sign();
