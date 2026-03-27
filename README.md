@@ -2,6 +2,8 @@
 
 This project demonstrates quantum-resistant digital signatures using the ML-DSA (Module-Lattice-Based Digital Signature Algorithm) in Java.
 
+Goal of this reposititory is to evolve it into a general REST/JSON client-server runtime, for connectivity testing between endpoints.
+
 ## Overview
 
 - **Algorithm**: ML-DSA (formerly Dilithium)
