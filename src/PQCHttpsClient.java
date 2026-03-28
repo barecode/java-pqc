@@ -12,19 +12,91 @@ public class PQCHttpsClient {
     
     private static final String DEFAULT_URL = "https://localhost:8443/ssl-info";
     private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.p12";
+    private static final int CONNECT_TIMEOUT_MS = 10000;
+    private static final int READ_TIMEOUT_MS = 10000;
+    
+    // Hostname verifier for localhost testing
+    private static final HostnameVerifier LOCALHOST_VERIFIER = new HostnameVerifier() {
+        @Override
+        public boolean verify(String hostname, SSLSession session) {
+            // For testing purposes, accept localhost
+            return hostname.equals("localhost") || hostname.equals("127.0.0.1");
+        }
+    };
     
     private String trustStorePath;
     private String trustStorePassword;
+    private SSLContext sslContext;
     
     /**
      * Create a new PQC HTTPS Client.
-     * 
+     *
      * @param trustStorePath Path to truststore containing trusted certificates
      * @param trustStorePassword Truststore password
+     * @throws Exception if SSL context initialization fails
      */
-    public PQCHttpsClient(String trustStorePath, String trustStorePassword) {
+    public PQCHttpsClient(String trustStorePath, String trustStorePassword) throws Exception {
         this.trustStorePath = trustStorePath;
         this.trustStorePassword = trustStorePassword;
+        this.sslContext = initializeSSLContext();
+    }
+    
+    /**
+     * Initialize SSL context with the configured truststore.
+     *
+     * @return Configured SSL context
+     * @throws Exception if initialization fails
+     */
+    private SSLContext initializeSSLContext() throws Exception {
+        System.out.println("[PQCHttpsClient] Initializing SSL context...");
+        System.out.println("[PQCHttpsClient] Truststore path: " + trustStorePath);
+        
+        try {
+            // Load truststore
+            KeyStore trustStore = KeyStore.getInstance("PKCS12");
+            System.out.println("[PQCHttpsClient] KeyStore type: PKCS12");
+            
+            try (FileInputStream fis = new FileInputStream(trustStorePath)) {
+                trustStore.load(fis, trustStorePassword.toCharArray());
+                System.out.println("[PQCHttpsClient] ✓ Truststore loaded successfully");
+                System.out.println("[PQCHttpsClient] Truststore contains " + trustStore.size() + " entries");
+                
+                // List trusted certificates for debugging
+                java.util.Enumeration<String> aliases = trustStore.aliases();
+                while (aliases.hasMoreElements()) {
+                    String alias = aliases.nextElement();
+                    System.out.println("[PQCHttpsClient]   - Certificate alias: " + alias);
+                    if (trustStore.isCertificateEntry(alias)) {
+                        java.security.cert.Certificate cert = trustStore.getCertificate(alias);
+                        if (cert instanceof java.security.cert.X509Certificate) {
+                            java.security.cert.X509Certificate x509 = (java.security.cert.X509Certificate) cert;
+                            System.out.println("[PQCHttpsClient]     Subject: " + x509.getSubjectX500Principal());
+                            System.out.println("[PQCHttpsClient]     Issuer: " + x509.getIssuerX500Principal());
+                            System.out.println("[PQCHttpsClient]     Valid from: " + x509.getNotBefore());
+                            System.out.println("[PQCHttpsClient]     Valid until: " + x509.getNotAfter());
+                        }
+                    }
+                }
+            }
+            
+            // Initialize trust manager factory
+            String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
+            System.out.println("[PQCHttpsClient] TrustManagerFactory algorithm: " + tmfAlgorithm);
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
+            tmf.init(trustStore);
+            System.out.println("[PQCHttpsClient] ✓ TrustManagerFactory initialized");
+            
+            // Create and initialize SSL context
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, tmf.getTrustManagers(), new SecureRandom());
+            System.out.println("[PQCHttpsClient] ✓ SSLContext initialized with TLS protocol");
+            
+            return context;
+        } catch (Exception e) {
+            System.err.println("[PQCHttpsClient] ✗ SSL context initialization failed: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
     /**
@@ -35,74 +107,129 @@ public class PQCHttpsClient {
      * @throws Exception if request fails
      */
     public String get(String urlString) throws Exception {
-        System.out.println("[PQCHttpsClient] Connecting to: " + urlString);
-        
-        // Load truststore
-        System.out.println("[PQCHttpsClient] Loading truststore: " + trustStorePath);
-        KeyStore trustStore = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(trustStorePath)) {
-            trustStore.load(fis, trustStorePassword.toCharArray());
-        }
-        
-        // Initialize trust manager factory
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(trustStore);
-        
-        // Create SSL context
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
-        
-        // Create hostname verifier (for localhost testing)
-        HostnameVerifier hostnameVerifier = new HostnameVerifier() {
-            @Override
-            public boolean verify(String hostname, SSLSession session) {
-                // For testing purposes, accept localhost
-                return hostname.equals("localhost") || hostname.equals("127.0.0.1");
-            }
-        };
+        System.out.println("\n[PQCHttpsClient] ========== Starting HTTPS Request ==========");
+        System.out.println("[PQCHttpsClient] Target URL: " + urlString);
         
         // Open connection
         URL url = new URL(urlString);
-        HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
-        connection.setSSLSocketFactory(sslContext.getSocketFactory());
-        connection.setHostnameVerifier(hostnameVerifier);
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(10000); // 10 seconds
-        connection.setReadTimeout(10000); // 10 seconds
+        HttpsURLConnection connection = null;
         
-        System.out.println("[PQCHttpsClient] Establishing HTTPS connection...");
-        
-        // Connect and get response
-        int responseCode = connection.getResponseCode();
-        System.out.println("[PQCHttpsClient] Response Code: " + responseCode);
-        
-        if (responseCode == 200) {
-            // Read response
-            StringBuilder response = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    response.append(line).append("\n");
-                }
-            }
+        try {
+            connection = (HttpsURLConnection) url.openConnection();
+            System.out.println("[PQCHttpsClient] Connection created");
             
-            // Get SSL session info
-            System.out.println("[PQCHttpsClient] ✓ Connection successful");
-            try {
-                SSLSession session = ((HttpsURLConnection) connection).getSSLSession().orElse(null);
-                if (session != null) {
-                    System.out.println("    - Cipher Suite: " + session.getCipherSuite());
-                    System.out.println("    - Protocol: " + session.getProtocol());
-                }
-            } catch (Exception e) {
-                // SSLSession info not available, continue anyway
-                System.out.println("    - SSL session info not available");
-            }
+            // Configure SSL
+            connection.setSSLSocketFactory(sslContext.getSocketFactory());
+            System.out.println("[PQCHttpsClient] SSL socket factory configured");
             
-            return response.toString();
-        } else {
-            throw new IOException("HTTP request failed with response code: " + responseCode);
+            connection.setHostnameVerifier(LOCALHOST_VERIFIER);
+            System.out.println("[PQCHttpsClient] Hostname verifier set (accepts localhost/127.0.0.1)");
+            
+            // Configure request
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            System.out.println("[PQCHttpsClient] Request configured: GET, timeout=" + CONNECT_TIMEOUT_MS + "ms");
+            
+            System.out.println("[PQCHttpsClient] Initiating SSL handshake...");
+            
+            // Connect and get response
+            int responseCode = connection.getResponseCode();
+            System.out.println("[PQCHttpsClient] ✓ SSL handshake successful");
+            System.out.println("[PQCHttpsClient] Response Code: " + responseCode);
+            
+            if (responseCode == 200) {
+                // Read response
+                StringBuilder response = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line).append("\n");
+                    }
+                }
+                
+                // Get SSL session info
+                System.out.println("[PQCHttpsClient] ✓ Connection successful");
+                try {
+                    SSLSession session = connection.getSSLSession().orElse(null);
+                    if (session != null) {
+                        System.out.println("[PQCHttpsClient] SSL Session Details:");
+                        System.out.println("    - Cipher Suite: " + session.getCipherSuite());
+                        System.out.println("    - Protocol: " + session.getProtocol());
+                        System.out.println("    - Peer Host: " + session.getPeerHost());
+                        System.out.println("    - Peer Port: " + session.getPeerPort());
+                        
+                        // Display peer certificates
+                        try {
+                            java.security.cert.Certificate[] peerCerts = session.getPeerCertificates();
+                            System.out.println("    - Peer certificates: " + peerCerts.length);
+                            for (int i = 0; i < peerCerts.length; i++) {
+                                if (peerCerts[i] instanceof java.security.cert.X509Certificate) {
+                                    java.security.cert.X509Certificate x509 = (java.security.cert.X509Certificate) peerCerts[i];
+                                    System.out.println("      [" + i + "] Subject: " + x509.getSubjectX500Principal());
+                                    System.out.println("      [" + i + "] Issuer: " + x509.getIssuerX500Principal());
+                                }
+                            }
+                        } catch (Exception certEx) {
+                            System.out.println("    - Could not retrieve peer certificates: " + certEx.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    // SSLSession info not available, continue anyway
+                    System.out.println("    - SSL session info not available: " + e.getMessage());
+                }
+                
+                return response.toString();
+            } else {
+                System.err.println("[PQCHttpsClient] ✗ HTTP request failed with code: " + responseCode);
+                
+                // Try to read error stream for more details
+                try (BufferedReader errorReader = new BufferedReader(
+                        new InputStreamReader(connection.getErrorStream()))) {
+                    System.err.println("[PQCHttpsClient] Error response:");
+                    String line;
+                    while ((line = errorReader.readLine()) != null) {
+                        System.err.println("    " + line);
+                    }
+                } catch (Exception e) {
+                    System.err.println("[PQCHttpsClient] Could not read error stream: " + e.getMessage());
+                }
+                
+                throw new IOException("HTTP request failed with response code: " + responseCode);
+            }
+        } catch (javax.net.ssl.SSLHandshakeException e) {
+            System.err.println("\n[PQCHttpsClient] ✗✗✗ SSL HANDSHAKE FAILED ✗✗✗");
+            System.err.println("[PQCHttpsClient] Error: " + e.getMessage());
+            System.err.println("[PQCHttpsClient] Possible causes:");
+            System.err.println("    1. Server certificate not trusted (not in truststore)");
+            System.err.println("    2. Certificate expired or not yet valid");
+            System.err.println("    3. Hostname mismatch");
+            System.err.println("    4. Incompatible cipher suites");
+            System.err.println("    5. TLS protocol version mismatch");
+            System.err.println("\n[PQCHttpsClient] Stack trace:");
+            e.printStackTrace();
+            throw e;
+        } catch (javax.net.ssl.SSLException e) {
+            System.err.println("\n[PQCHttpsClient] ✗✗✗ SSL ERROR ✗✗✗");
+            System.err.println("[PQCHttpsClient] Error: " + e.getMessage());
+            System.err.println("[PQCHttpsClient] Stack trace:");
+            e.printStackTrace();
+            throw e;
+        } catch (Exception e) {
+            System.err.println("\n[PQCHttpsClient] ✗✗✗ REQUEST FAILED ✗✗✗");
+            System.err.println("[PQCHttpsClient] Error type: " + e.getClass().getName());
+            System.err.println("[PQCHttpsClient] Error message: " + e.getMessage());
+            System.err.println("[PQCHttpsClient] Stack trace:");
+            e.printStackTrace();
+            throw e;
+        } finally {
+            // Ensure connection is closed
+            if (connection != null) {
+                connection.disconnect();
+                System.out.println("[PQCHttpsClient] Connection closed");
+            }
+            System.out.println("[PQCHttpsClient] ========== Request Complete ==========\n");
         }
     }
     

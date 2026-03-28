@@ -132,6 +132,15 @@ public class PQCHttpsServer {
      * Returns comprehensive SSL/TLS session information as JSON.
      */
     private static class SSLInfoHandler implements HttpHandler {
+        
+        // Thread-safe date formatter for ISO 8601 timestamps
+        private static final SimpleDateFormat ISO_DATE_FORMATTER = createISOFormatter();
+        
+        private static SimpleDateFormat createISOFormatter() {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+            return sdf;
+        }
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!(exchange instanceof HttpsExchange)) {
@@ -169,59 +178,93 @@ public class PQCHttpsServer {
         private String buildSSLInfoJSON(SSLSession session, HttpExchange exchange) throws Exception {
             StringBuilder json = new StringBuilder();
             json.append("{\n");
-            
-            // Timestamp
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-            json.append("  \"timestamp\": \"").append(sdf.format(new Date())).append("\",\n");
-            
-            // Server information
+            appendTimestamp(json);
+            appendServerInfo(json, exchange, session);
+            appendCipherInfo(json, session);
+            appendCertificateInfo(json, session);
+            appendSessionInfo(json, session);
+            json.append("}");
+            return json.toString();
+        }
+        
+        /**
+         * Append timestamp to JSON.
+         */
+        private void appendTimestamp(StringBuilder json) {
+            synchronized (ISO_DATE_FORMATTER) {
+                json.append("  \"timestamp\": \"")
+                    .append(ISO_DATE_FORMATTER.format(new Date()))
+                    .append("\",\n");
+            }
+        }
+        
+        /**
+         * Append server information to JSON.
+         */
+        private void appendServerInfo(StringBuilder json, HttpExchange exchange, SSLSession session) {
             json.append("  \"server\": {\n");
             json.append("    \"port\": ").append(exchange.getLocalAddress().getPort()).append(",\n");
             json.append("    \"protocol\": \"").append(session.getProtocol()).append("\"\n");
             json.append("  },\n");
-            
-            // Cipher information
+        }
+        
+        /**
+         * Append cipher information to JSON.
+         */
+        private void appendCipherInfo(StringBuilder json, SSLSession session) {
             json.append("  \"cipher\": {\n");
             json.append("    \"suite\": \"").append(session.getCipherSuite()).append("\",\n");
             json.append("    \"protocol\": \"").append(session.getProtocol()).append("\"\n");
             json.append("  },\n");
-            
-            // Certificate information
+        }
+        
+        /**
+         * Append certificate information to JSON.
+         */
+        private void appendCertificateInfo(StringBuilder json, SSLSession session) {
             json.append("  \"certificate\": ");
             try {
                 java.security.cert.Certificate[] certs = session.getLocalCertificates();
                 if (certs != null && certs.length > 0 && certs[0] instanceof X509Certificate) {
                     X509Certificate cert = (X509Certificate) certs[0];
-                    json.append("{\n");
-                    json.append("    \"algorithm\": \"").append(cert.getPublicKey().getAlgorithm()).append("\",\n");
-                    json.append("    \"subject\": \"").append(escapeJson(cert.getSubjectX500Principal().toString())).append("\",\n");
-                    json.append("    \"issuer\": \"").append(escapeJson(cert.getIssuerX500Principal().toString())).append("\",\n");
-                    json.append("    \"serialNumber\": \"").append(cert.getSerialNumber().toString()).append("\",\n");
-                    json.append("    \"notBefore\": \"").append(sdf.format(cert.getNotBefore())).append("\",\n");
-                    json.append("    \"notAfter\": \"").append(sdf.format(cert.getNotAfter())).append("\",\n");
-                    json.append("    \"signatureAlgorithm\": \"").append(cert.getSigAlgName()).append("\",\n");
-                    json.append("    \"publicKeySize\": ").append(cert.getPublicKey().getEncoded().length).append(",\n");
-                    json.append("    \"version\": ").append(cert.getVersion()).append("\n");
-                    json.append("  },\n");
+                    appendCertificateDetails(json, cert);
                 } else {
                     json.append("null,\n");
                 }
             } catch (Exception e) {
                 json.append("{\"error\": \"").append(escapeJson(e.getMessage())).append("\"},\n");
             }
-            
-            // Session information
+        }
+        
+        /**
+         * Append detailed certificate information to JSON.
+         */
+        private void appendCertificateDetails(StringBuilder json, X509Certificate cert) {
+            synchronized (ISO_DATE_FORMATTER) {
+                json.append("{\n");
+                json.append("    \"algorithm\": \"").append(cert.getPublicKey().getAlgorithm()).append("\",\n");
+                json.append("    \"subject\": \"").append(escapeJson(cert.getSubjectX500Principal().toString())).append("\",\n");
+                json.append("    \"issuer\": \"").append(escapeJson(cert.getIssuerX500Principal().toString())).append("\",\n");
+                json.append("    \"serialNumber\": \"").append(cert.getSerialNumber().toString()).append("\",\n");
+                json.append("    \"notBefore\": \"").append(ISO_DATE_FORMATTER.format(cert.getNotBefore())).append("\",\n");
+                json.append("    \"notAfter\": \"").append(ISO_DATE_FORMATTER.format(cert.getNotAfter())).append("\",\n");
+                json.append("    \"signatureAlgorithm\": \"").append(cert.getSigAlgName()).append("\",\n");
+                json.append("    \"publicKeySize\": ").append(cert.getPublicKey().getEncoded().length).append(",\n");
+                json.append("    \"version\": ").append(cert.getVersion()).append("\n");
+                json.append("  },\n");
+            }
+        }
+        
+        /**
+         * Append session information to JSON.
+         */
+        private void appendSessionInfo(StringBuilder json, SSLSession session) {
             json.append("  \"session\": {\n");
             json.append("    \"id\": \"").append(bytesToHex(session.getId())).append("\",\n");
             json.append("    \"creationTime\": ").append(session.getCreationTime()).append(",\n");
             json.append("    \"peerHost\": \"").append(session.getPeerHost()).append("\",\n");
             json.append("    \"peerPort\": ").append(session.getPeerPort()).append("\n");
             json.append("  }\n");
-            
-            json.append("}");
-            
-            return json.toString();
         }
         
         /**
@@ -252,6 +295,83 @@ public class PQCHttpsServer {
     }
     
     /**
+     * Parse port number from command-line arguments.
+     *
+     * @param args Command-line arguments
+     * @return Port number to use
+     */
+    private static int parsePort(String[] args) {
+        if (args.length == 0) {
+            System.out.println("Using default port: " + DEFAULT_PORT);
+            System.out.println("(You can specify a different port as a command line argument)\n");
+            return DEFAULT_PORT;
+        }
+        
+        try {
+            int port = Integer.parseInt(args[0]);
+            System.out.println("Using port from command line: " + port);
+            return port;
+        } catch (NumberFormatException e) {
+            System.err.println("Invalid port number: " + args[0]);
+            System.err.println("Using default port: " + DEFAULT_PORT);
+            return DEFAULT_PORT;
+        }
+    }
+    
+    /**
+     * Ensure keystore and truststore exist, creating them if necessary.
+     *
+     * @param javaHome Java home directory path
+     * @throws Exception if keystore creation fails
+     */
+    private static void ensureKeystoresExist(String javaHome) throws Exception {
+        // Create certs directory
+        new File("certs").mkdirs();
+        
+        // Check if keystore exists, create if not
+        File keystoreFile = new File(DEFAULT_KEYSTORE);
+        if (!keystoreFile.exists()) {
+            System.out.println("[PQCHttpsServer] Keystore not found, creating new one...");
+            KeyStoreManager.createKeyStoreWithCertificate(DEFAULT_KEYSTORE, javaHome);
+            System.out.println();
+        }
+        
+        // Check if truststore exists, create if not
+        File truststoreFile = new File(DEFAULT_TRUSTSTORE);
+        if (!truststoreFile.exists()) {
+            System.out.println("[PQCHttpsServer] Truststore not found, creating new one...");
+            KeyStoreManager.exportCertificateToTrustStore(DEFAULT_KEYSTORE, DEFAULT_TRUSTSTORE, javaHome);
+            System.out.println();
+        }
+    }
+    
+    /**
+     * Setup shutdown hook for graceful server termination.
+     *
+     * @param server Server instance to shutdown
+     */
+    private static void setupShutdownHook(PQCHttpsServer server) {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("\n[PQCHttpsServer] Shutting down gracefully...");
+            server.stop(0);
+        }));
+    }
+    
+    /**
+     * Keep the server running until interrupted.
+     *
+     * @throws InterruptedException if the wait is interrupted
+     */
+    private static void keepServerRunning() throws InterruptedException {
+        System.out.println("\n✓ Server is running. Press Ctrl+C to stop.");
+        // Use a monitor object for more robust thread management
+        Object monitor = new Object();
+        synchronized (monitor) {
+            monitor.wait(); // Will be interrupted by shutdown hook
+        }
+    }
+    
+    /**
      * Main method to start the server.
      */
     public static void main(String[] args) {
@@ -259,42 +379,14 @@ public class PQCHttpsServer {
             System.out.println("=== PQC HTTPS Server ===\n");
             
             // Parse command-line arguments
-            int port = DEFAULT_PORT;
-            if (args.length > 0) {
-                try {
-                    port = Integer.parseInt(args[0]);
-                    System.out.println("Using port from command line: " + port);
-                } catch (NumberFormatException e) {
-                    System.err.println("Invalid port number: " + args[0]);
-                    System.err.println("Using default port: " + DEFAULT_PORT);
-                }
-            } else {
-                System.out.println("Using default port: " + DEFAULT_PORT);
-                System.out.println("(You can specify a different port as a command line argument)\n");
-            }
+            int port = parsePort(args);
             
             // Determine Java home
             String javaHome = System.getProperty("java.home");
             System.out.println("Java Home: " + javaHome + "\n");
             
-            // Create certs directory
-            new File("certs").mkdirs();
-            
-            // Check if keystore exists, create if not
-            File keystoreFile = new File(DEFAULT_KEYSTORE);
-            if (!keystoreFile.exists()) {
-                System.out.println("[PQCHttpsServer] Keystore not found, creating new one...");
-                KeyStoreManager.createKeyStoreWithCertificate(DEFAULT_KEYSTORE, javaHome);
-                System.out.println();
-            }
-            
-            // Check if truststore exists, create if not
-            File truststoreFile = new File(DEFAULT_TRUSTSTORE);
-            if (!truststoreFile.exists()) {
-                System.out.println("[PQCHttpsServer] Truststore not found, creating new one...");
-                KeyStoreManager.exportCertificateToTrustStore(DEFAULT_KEYSTORE, DEFAULT_TRUSTSTORE, javaHome);
-                System.out.println();
-            }
+            // Ensure keystores exist
+            ensureKeystoresExist(javaHome);
             
             // Create and start server
             PQCHttpsServer server = new PQCHttpsServer(
@@ -305,10 +397,11 @@ public class PQCHttpsServer {
             
             server.start();
             
-            System.out.println("\n✓ Server is running. Press Ctrl+C to stop.");
+            // Setup graceful shutdown
+            setupShutdownHook(server);
             
             // Keep the server running
-            Thread.currentThread().join();
+            keepServerRunning();
             
         } catch (Exception e) {
             System.err.println("✗ Server failed: " + e.getMessage());
