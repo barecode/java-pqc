@@ -15,6 +15,7 @@ public class KeyStoreManager {
     private static final String KEYSTORE_TYPE = "PKCS12";
     private static final String DEFAULT_KEYSTORE_PASSWORD = "changeit";
     private static final String DEFAULT_KEY_ALIAS = "pqc-server";
+    private static final String KEYTOOL_OUTPUT_PREFIX = "    [keytool] ";
     
     /**
      * Create a keystore with an ML-DSA certificate using keytool.
@@ -38,6 +39,17 @@ public class KeyStoreManager {
             int validityDays,
             String javaHome) throws Exception {
         
+        // Validate input parameters
+        validateParameter(keystorePath, "keystorePath");
+        validateParameter(alias, "alias");
+        validateParameter(password, "password");
+        validateParameter(dname, "dname");
+        validateParameter(algorithm, "algorithm");
+        validateParameter(javaHome, "javaHome");
+        if (validityDays <= 0) {
+            throw new IllegalArgumentException("validityDays must be positive, got: " + validityDays);
+        }
+        
         System.out.println("[KeyStoreManager] Creating keystore with ML-DSA certificate...");
         System.out.println("    - Keystore: " + keystorePath);
         System.out.println("    - Alias: " + alias);
@@ -45,48 +57,26 @@ public class KeyStoreManager {
         System.out.println("    - DN: " + dname);
         System.out.println("    - Validity: " + validityDays + " days");
         
-        // Delete existing keystore if it exists
-        File keystoreFile = new File(keystorePath);
-        if (keystoreFile.exists()) {
-            System.out.println("    - Deleting existing keystore...");
-            keystoreFile.delete();
+        // Delete existing keystore if it exists (using NIO)
+        Path keystoreFilePath = Paths.get(keystorePath);
+        if (Files.deleteIfExists(keystoreFilePath)) {
+            System.out.println("    - Deleted existing keystore");
         }
         
-        // Ensure parent directory exists
-        File parentDir = keystoreFile.getParentFile();
-        if (parentDir != null && !parentDir.exists()) {
-            parentDir.mkdirs();
+        // Ensure parent directory exists (using NIO)
+        Path parentDir = keystoreFilePath.getParent();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir);
         }
         
-        // Build keytool command
-        String keytoolPath = javaHome + "/bin/keytool";
-        ProcessBuilder pb = new ProcessBuilder(
-            keytoolPath,
-            "-genkeypair",
-            "-alias", alias,
-            "-keyalg", algorithm,
-            "-keystore", keystorePath,
-            "-storepass", password,
-            "-keypass", password,
-            "-dname", dname,
-            "-validity", String.valueOf(validityDays),
-            "-storetype", KEYSTORE_TYPE
+        // Build and execute keytool command
+        Path keytoolPath = Paths.get(javaHome).resolve("bin").resolve("keytool");
+        ProcessBuilder pb = buildKeytoolGenKeyPairCommand(
+            keytoolPath.toString(), alias, algorithm, keystorePath,
+            password, dname, validityDays
         );
         
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-        
-        // Capture output
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            System.out.println("    [keytool] " + line);
-        }
-        
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            throw new Exception("keytool failed with exit code: " + exitCode);
-        }
+        executeKeytoolCommand(pb, "Keystore creation");
         
         System.out.println("[KeyStoreManager] ✓ Keystore created successfully");
     }
@@ -162,79 +152,64 @@ public class KeyStoreManager {
             String trustStorePassword,
             String javaHome) throws Exception {
         
+        // Validate input parameters
+        validateParameter(sourceKeystorePath, "sourceKeystorePath");
+        validateParameter(sourcePassword, "sourcePassword");
+        validateParameter(sourceAlias, "sourceAlias");
+        validateParameter(trustStorePath, "trustStorePath");
+        validateParameter(trustStorePassword, "trustStorePassword");
+        validateParameter(javaHome, "javaHome");
+        
         System.out.println("[KeyStoreManager] Exporting certificate to truststore...");
         System.out.println("    - Source: " + sourceKeystorePath);
         System.out.println("    - Destination: " + trustStorePath);
         System.out.println("    - Alias: " + sourceAlias);
         
-        // Delete existing truststore if it exists
-        File trustStoreFile = new File(trustStorePath);
-        if (trustStoreFile.exists()) {
-            System.out.println("    - Deleting existing truststore...");
-            trustStoreFile.delete();
+        // Delete existing truststore if it exists (using NIO)
+        Path trustStoreFilePath = Paths.get(trustStorePath);
+        if (Files.deleteIfExists(trustStoreFilePath)) {
+            System.out.println("    - Deleted existing truststore");
         }
         
-        // Ensure parent directory exists
-        File parentDir = trustStoreFile.getParentFile();
-        if (parentDir != null && !parentDir.exists()) {
-            parentDir.mkdirs();
+        // Ensure parent directory exists (using NIO)
+        Path parentDir = trustStoreFilePath.getParent();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir);
         }
         
         // Export certificate using keytool
-        String keytoolPath = javaHome + "/bin/keytool";
+        Path keytoolPath = Paths.get(javaHome).resolve("bin").resolve("keytool");
+        String keytoolCommand = keytoolPath.toString();
         
         // First, export the certificate to a file
-        String certFile = trustStorePath + ".cert";
+        Path certFilePath = Paths.get(trustStorePath + ".cert");
         ProcessBuilder exportPb = new ProcessBuilder(
-            keytoolPath,
+            keytoolCommand,
             "-exportcert",
             "-alias", sourceAlias,
             "-keystore", sourceKeystorePath,
             "-storepass", sourcePassword,
-            "-file", certFile
+            "-file", certFilePath.toString()
         );
         
-        exportPb.redirectErrorStream(true);
-        Process exportProcess = exportPb.start();
-        
-        BufferedReader reader = new BufferedReader(new InputStreamReader(exportProcess.getInputStream()));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            System.out.println("    [keytool export] " + line);
-        }
-        
-        int exitCode = exportProcess.waitFor();
-        if (exitCode != 0) {
-            throw new Exception("Certificate export failed with exit code: " + exitCode);
-        }
+        executeKeytoolCommand(exportPb, "Certificate export");
         
         // Then, import the certificate into the truststore
         ProcessBuilder importPb = new ProcessBuilder(
-            keytoolPath,
+            keytoolCommand,
             "-importcert",
             "-alias", sourceAlias,
-            "-file", certFile,
+            "-file", certFilePath.toString(),
             "-keystore", trustStorePath,
             "-storepass", trustStorePassword,
             "-noprompt",
             "-storetype", KEYSTORE_TYPE
         );
         
-        importPb.redirectErrorStream(true);
-        Process importProcess = importPb.start();
+        executeKeytoolCommand(importPb, "Certificate import");
         
-        reader = new BufferedReader(new InputStreamReader(importProcess.getInputStream()));
-        while ((line = reader.readLine()) != null) {
-            System.out.println("    [keytool import] " + line);
-        }
-        
-        exitCode = importProcess.waitFor();
-        if (exitCode != 0) {
-            throw new Exception("Certificate import failed with exit code: " + exitCode);
-        }
-        
-        // Clean up temporary certificate file
-        new File(certFile).delete();
+        // Clean up temporary certificate file (using NIO)
+        Files.deleteIfExists(certFilePath);
         
         System.out.println("[KeyStoreManager] ✓ Certificate exported to truststore successfully");
     }
@@ -277,6 +252,75 @@ public class KeyStoreManager {
      */
     public static String getDefaultAlias() {
         return DEFAULT_KEY_ALIAS;
+    }
+    
+    /**
+     * Validates that a parameter is not null or empty.
+     *
+     * @param value Parameter value to validate
+     * @param paramName Parameter name for error message
+     * @throws IllegalArgumentException if validation fails
+     */
+    private static void validateParameter(String value, String paramName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException(paramName + " cannot be null or empty");
+        }
+    }
+    
+    /**
+     * Builds a ProcessBuilder for keytool genkeypair command.
+     *
+     * @param keytoolPath Path to keytool executable
+     * @param alias Key alias
+     * @param algorithm Signature algorithm
+     * @param keystorePath Path to keystore
+     * @param password Keystore password
+     * @param dname Distinguished name
+     * @param validityDays Certificate validity in days
+     * @return Configured ProcessBuilder
+     */
+    private static ProcessBuilder buildKeytoolGenKeyPairCommand(
+            String keytoolPath, String alias, String algorithm,
+            String keystorePath, String password, String dname, int validityDays) {
+        return new ProcessBuilder(
+            keytoolPath,
+            "-genkeypair",
+            "-alias", alias,
+            "-keyalg", algorithm,
+            "-keystore", keystorePath,
+            "-storepass", password,
+            "-keypass", password,
+            "-dname", dname,
+            "-validity", String.valueOf(validityDays),
+            "-storetype", KEYSTORE_TYPE
+        );
+    }
+    
+    /**
+     * Executes a keytool command and captures output.
+     *
+     * @param pb ProcessBuilder configured with keytool command
+     * @param operationName Name of operation for error messages
+     * @throws Exception if command execution fails
+     */
+    private static void executeKeytoolCommand(ProcessBuilder pb, String operationName) throws Exception {
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        
+        // Capture output with proper resource management
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println(KEYTOOL_OUTPUT_PREFIX + line);
+            }
+        }
+        
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new Exception(String.format(
+                "%s failed with exit code: %d", operationName, exitCode));
+        }
     }
     
     /**
