@@ -5,6 +5,10 @@
  * - https://openjdk.org/jeps/497 "JEP 497: Quantum-Resistant Module-Lattice-Based Digital Signature Algorithm"
      - In order of increasing security strength and decreasing performance, they are named "ML-DSA-44", "ML-DSA-65" (DEFAULT), and "ML-DSA-87".
  * - https://openjdk.org/jeps/496 "JEP 496: Quantum-Resistant Module-Lattice-Based Key Encapsulation Mechanism"
+ * - https://openjdk.org/jeps/470 "JEP 470: PEM Encodings of Cryptographic Objects (Preview)""
+ * - https://openjdk.org/jeps/524 "JEP 524: PEM Encodings of Cryptographic Objects (Second Preview)"
+ *
+ * Related reading: https://openquantumsafe.org/
  */
 
 import java.security.*;
