@@ -7,12 +7,12 @@ import java.nio.file.*;
 /**
  * Manages keystores and truststores for ML-DSA certificates.
  * 
- * This class handles creation, loading, and management of Java KeyStores (JKS)
+ * This class handles creation, loading, and management of industry standard KeyStores (PKCS12)
  * containing ML-DSA certificates for HTTPS connections.
  */
 public class KeyStoreManager {
     
-    private static final String KEYSTORE_TYPE = "JKS";
+    private static final String KEYSTORE_TYPE = "PKCS12";
     private static final String DEFAULT_KEYSTORE_PASSWORD = "changeit";
     private static final String DEFAULT_KEY_ALIAS = "pqc-server";
     
@@ -294,7 +294,7 @@ public class KeyStoreManager {
             new File("certs").mkdirs();
             
             // Create keystore with certificate
-            String keystorePath = "certs/test-keystore.jks";
+            String keystorePath = "certs/test-keystore.p12";
             createKeyStoreWithCertificate(keystorePath, javaHome);
             
             // Load the keystore
@@ -316,7 +316,7 @@ public class KeyStoreManager {
             }
             
             // Export to truststore
-            String trustStorePath = "certs/test-truststore.jks";
+            String trustStorePath = "certs/test-truststore.p12";
             exportCertificateToTrustStore(keystorePath, trustStorePath, javaHome);
             
             // Load the truststore

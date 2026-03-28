@@ -17,8 +17,8 @@ import java.util.TimeZone;
 public class PQCHttpsServer {
     
     private static final int DEFAULT_PORT = 8443;
-    private static final String DEFAULT_KEYSTORE = "certs/server-keystore.jks";
-    private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.jks";
+    private static final String DEFAULT_KEYSTORE = "certs/server-keystore.p12";
+    private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.p12";
     
     private HttpsServer server;
     private int port;
@@ -38,7 +38,7 @@ public class PQCHttpsServer {
         
         // Load keystore
         System.out.println("[PQCHttpsServer] Loading keystore: " + keystorePath);
-        KeyStore keyStore = KeyStore.getInstance("JKS");
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
         try (FileInputStream fis = new FileInputStream(keystorePath)) {
             keyStore.load(fis, keystorePassword.toCharArray());
         }

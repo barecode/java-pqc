@@ -11,7 +11,7 @@ import java.security.*;
 public class PQCHttpsClient {
     
     private static final String DEFAULT_URL = "https://localhost:8443/ssl-info";
-    private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.jks";
+    private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.p12";
     
     private String trustStorePath;
     private String trustStorePassword;
@@ -39,7 +39,7 @@ public class PQCHttpsClient {
         
         // Load truststore
         System.out.println("[PQCHttpsClient] Loading truststore: " + trustStorePath);
-        KeyStore trustStore = KeyStore.getInstance("JKS");
+        KeyStore trustStore = KeyStore.getInstance("PKCS12");
         try (FileInputStream fis = new FileInputStream(trustStorePath)) {
             trustStore.load(fis, trustStorePassword.toCharArray());
         }
