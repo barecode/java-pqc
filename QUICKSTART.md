@@ -43,7 +43,7 @@ This project shows a **hybrid approach** to post-quantum cryptography:
 Run everything with one command:
 
 ```bash
-./test-connection.sh
+./scripts/test-connection.sh
 ```
 
 **What happens:**
@@ -67,13 +67,13 @@ Run everything with one command:
 
 **Terminal 1 - Start Server:**
 ```bash
-./compile.sh
-./start-server.sh
+./scripts/compile.sh
+./scripts/start-server.sh
 ```
 
 **Terminal 2 - Run Client:**
 ```bash
-./start-client.sh
+./scripts/start-client.sh
 ```
 
 ### Option 3: Just the Signature Demo
@@ -81,8 +81,8 @@ Run everything with one command:
 Test ML-DSA signatures without HTTPS:
 
 ```bash
-./compile.sh
-./run.sh
+./scripts/compile.sh
+./scripts/run.sh
 ```
 
 ## What You Just Saw
@@ -177,8 +177,8 @@ This shows the **quantum-resistant** ML-DSA signature.
 ## Next Steps
 
 ### Learn More
-- **[HYBRID_APPROACH.md](HYBRID_APPROACH.md)** - Complete architecture explanation
-- **[SSL_HANDSHAKE_ANALYSIS.md](SSL_HANDSHAKE_ANALYSIS.md)** - Why pure ML-DSA doesn't work
+- **[docs/HYBRID_APPROACH.md](docs/HYBRID_APPROACH.md)** - Complete architecture explanation
+- **[docs/SSL_HANDSHAKE_ANALYSIS.md](docs/SSL_HANDSHAKE_ANALYSIS.md)** - Why pure ML-DSA doesn't work
 - **[README.md](README.md)** - Full project documentation
 
 ### Explore the Code
@@ -196,18 +196,18 @@ This shows the **quantum-resistant** ML-DSA signature.
 
 ### Port Already in Use
 ```bash
-./start-server.sh 9443  # Use different port
+./scripts/start-server.sh 9443  # Use different port
 ```
 
 ### Certificates Not Found
 ```bash
-rm -rf certs/           # Delete old certificates
-./start-server.sh       # Regenerate
+rm -rf certs/                    # Delete old certificates
+./scripts/start-server.sh        # Regenerate
 ```
 
 ### Compilation Errors
 ```bash
-./compile.sh            # Recompile everything
+./scripts/compile.sh             # Recompile everything
 ```
 
 ## What Makes This Special?
@@ -236,4 +236,4 @@ You just saw:
 **Time to quantum computers**: ~10-15 years (estimated)
 **Time to implement PQC**: Today! (with this approach)
 
-Ready to dive deeper? Check out [HYBRID_APPROACH.md](HYBRID_APPROACH.md)!
+Ready to dive deeper? Check out [docs/HYBRID_APPROACH.md](docs/HYBRID_APPROACH.md)!
