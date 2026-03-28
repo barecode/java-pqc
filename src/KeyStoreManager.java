@@ -50,7 +50,7 @@ public class KeyStoreManager {
             throw new IllegalArgumentException("validityDays must be positive, got: " + validityDays);
         }
         
-        System.out.println("[KeyStoreManager] Creating keystore with ML-DSA certificate...");
+        System.out.println("[KeyStoreManager] Creating keystore with certificate...");
         System.out.println("    - Keystore: " + keystorePath);
         System.out.println("    - Alias: " + alias);
         System.out.println("    - Algorithm: " + algorithm);
@@ -94,7 +94,7 @@ public class KeyStoreManager {
             DEFAULT_KEY_ALIAS,
             DEFAULT_KEYSTORE_PASSWORD,
             "CN=localhost, O=PQC-HTTPS-Server, C=US",
-            "ML-DSA-65",
+            "EC",  // Use ECDSA for TLS compatibility
             365,
             javaHome
         );
@@ -253,6 +253,111 @@ public class KeyStoreManager {
     public static String getDefaultAlias() {
         return DEFAULT_KEY_ALIAS;
     }
+    /**
+     * Generate an ML-DSA key pair for application-level signing.
+     * This is separate from the TLS certificate and used for demonstrating PQC capabilities.
+     * 
+     * @param algorithm ML-DSA algorithm variant (ML-DSA-44, ML-DSA-65, or ML-DSA-87)
+     * @return Generated KeyPair
+     * @throws Exception if key generation fails
+     */
+    public static KeyPair generateMLDSAKeyPair(String algorithm) throws Exception {
+        System.out.println("[KeyStoreManager] Generating ML-DSA key pair...");
+        System.out.println("    - Algorithm: " + algorithm);
+        
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance(algorithm);
+        KeyPair keyPair = keyGen.generateKeyPair();
+        
+        System.out.println("[KeyStoreManager] ✓ ML-DSA key pair generated");
+        System.out.println("    - Public key size: " + keyPair.getPublic().getEncoded().length + " bytes");
+        System.out.println("    - Private key size: " + keyPair.getPrivate().getEncoded().length + " bytes");
+        
+        return keyPair;
+    }
+    
+    /**
+     * Generate an ML-DSA-65 key pair (default variant).
+     * 
+     * @return Generated KeyPair
+     * @throws Exception if key generation fails
+     */
+    public static KeyPair generateMLDSAKeyPair() throws Exception {
+        return generateMLDSAKeyPair("ML-DSA-65");
+    }
+    
+    /**
+     * Save an ML-DSA key pair to files for later use.
+     * 
+     * @param keyPair The key pair to save
+     * @param publicKeyPath Path to save the public key
+     * @param privateKeyPath Path to save the private key
+     * @throws Exception if saving fails
+     */
+    public static void saveMLDSAKeyPair(KeyPair keyPair, String publicKeyPath, String privateKeyPath) throws Exception {
+        System.out.println("[KeyStoreManager] Saving ML-DSA key pair...");
+        System.out.println("    - Public key: " + publicKeyPath);
+        System.out.println("    - Private key: " + privateKeyPath);
+        
+        // Ensure parent directories exist
+        Path pubPath = Paths.get(publicKeyPath);
+        Path privPath = Paths.get(privateKeyPath);
+        
+        if (pubPath.getParent() != null) {
+            Files.createDirectories(pubPath.getParent());
+        }
+        if (privPath.getParent() != null) {
+            Files.createDirectories(privPath.getParent());
+        }
+        
+        // Save public key
+        Files.write(pubPath, keyPair.getPublic().getEncoded());
+        
+        // Save private key
+        Files.write(privPath, keyPair.getPrivate().getEncoded());
+        
+        System.out.println("[KeyStoreManager] ✓ ML-DSA key pair saved");
+    }
+    
+    /**
+     * Load an ML-DSA public key from a file.
+     * 
+     * @param publicKeyPath Path to the public key file
+     * @param algorithm ML-DSA algorithm variant
+     * @return Loaded PublicKey
+     * @throws Exception if loading fails
+     */
+    public static PublicKey loadMLDSAPublicKey(String publicKeyPath, String algorithm) throws Exception {
+        System.out.println("[KeyStoreManager] Loading ML-DSA public key from: " + publicKeyPath);
+        
+        byte[] keyBytes = Files.readAllBytes(Paths.get(publicKeyPath));
+        java.security.spec.X509EncodedKeySpec keySpec = new java.security.spec.X509EncodedKeySpec(keyBytes);
+        KeyFactory keyFactory = KeyFactory.getInstance(algorithm);
+        PublicKey publicKey = keyFactory.generatePublic(keySpec);
+        
+        System.out.println("[KeyStoreManager] ✓ ML-DSA public key loaded");
+        return publicKey;
+    }
+    
+    /**
+     * Load an ML-DSA private key from a file.
+     * 
+     * @param privateKeyPath Path to the private key file
+     * @param algorithm ML-DSA algorithm variant
+     * @return Loaded PrivateKey
+     * @throws Exception if loading fails
+     */
+    public static PrivateKey loadMLDSAPrivateKey(String privateKeyPath, String algorithm) throws Exception {
+        System.out.println("[KeyStoreManager] Loading ML-DSA private key from: " + privateKeyPath);
+        
+        byte[] keyBytes = Files.readAllBytes(Paths.get(privateKeyPath));
+        java.security.spec.PKCS8EncodedKeySpec keySpec = new java.security.spec.PKCS8EncodedKeySpec(keyBytes);
+        KeyFactory keyFactory = KeyFactory.getInstance(algorithm);
+        PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
+        
+        System.out.println("[KeyStoreManager] ✓ ML-DSA private key loaded");
+        return privateKey;
+    }
+    
     
     /**
      * Validates that a parameter is not null or empty.

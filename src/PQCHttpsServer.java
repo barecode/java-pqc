@@ -19,9 +19,12 @@ public class PQCHttpsServer {
     private static final int DEFAULT_PORT = 8443;
     private static final String DEFAULT_KEYSTORE = "certs/server-keystore.p12";
     private static final String DEFAULT_TRUSTSTORE = "certs/client-truststore.p12";
+    private static final String MLDSA_PRIVATE_KEY_PATH = "certs/mldsa-private.key";
+    private static final String MLDSA_PUBLIC_KEY_PATH = "certs/mldsa-public.key";
     
     private HttpsServer server;
     private int port;
+    private static KeyPair mldsaKeyPair;
     
     /**
      * Create a new PQC HTTPS Server.
@@ -77,6 +80,8 @@ public class PQCHttpsServer {
         
         // Register endpoints
         server.createContext("/ssl-info", new SSLInfoHandler());
+        server.createContext("/pqc-sign", new PQCSignHandler());
+        server.createContext("/pqc-verify", new PQCVerifyHandler());
         server.createContext("/", new RootHandler());
         
         // Set executor (null = default executor)
@@ -94,6 +99,8 @@ public class PQCHttpsServer {
         System.out.println("[PQCHttpsServer] Endpoints:");
         System.out.println("    - https://localhost:" + port + "/");
         System.out.println("    - https://localhost:" + port + "/ssl-info");
+        System.out.println("    - https://localhost:" + port + "/pqc-sign");
+        System.out.println("    - https://localhost:" + port + "/pqc-verify");
     }
     
     /**
@@ -113,9 +120,12 @@ public class PQCHttpsServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String response = "{\n" +
-                "  \"message\": \"PQC HTTPS Server\",\n" +
+                "  \"message\": \"PQC HTTPS Server (Hybrid Approach)\",\n" +
+                "  \"description\": \"Uses ECDSA for TLS, ML-DSA for application-level signing\",\n" +
                 "  \"endpoints\": [\n" +
-                "    \"/ssl-info - Get SSL/TLS session information\"\n" +
+                "    \"/ssl-info - Get SSL/TLS session information\",\n" +
+                "    \"/pqc-sign - Sign a message with ML-DSA-65\",\n" +
+                "    \"/pqc-verify - Verify an ML-DSA-65 signature\"\n" +
                 "  ]\n" +
                 "}";
             
@@ -293,6 +303,175 @@ public class PQCHttpsServer {
                      .replace("\t", "\\t");
         }
     }
+    /**
+     * Handler for the /pqc-sign endpoint.
+     * Signs a message using ML-DSA-65 and returns the signature.
+     */
+    private static class PQCSignHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                String error = "{\"error\": \"Method not allowed. Use POST.\"}";
+                exchange.sendResponseHeaders(405, error.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(error.getBytes());
+                }
+                return;
+            }
+            
+            try {
+                // Read message from request body
+                String message;
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(exchange.getRequestBody()))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    message = sb.toString();
+                }
+                
+                if (message == null || message.trim().isEmpty()) {
+                    String error = "{\"error\": \"Message body is required\"}";
+                    exchange.sendResponseHeaders(400, error.getBytes().length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(error.getBytes());
+                    }
+                    return;
+                }
+                
+                // Sign the message
+                String signature = MLDSASignatureHelper.signString(message, mldsaKeyPair.getPrivate());
+                
+                // Build JSON response
+                String response = "{\n" +
+                    "  \"message\": \"" + escapeJson(message) + "\",\n" +
+                    "  \"signature\": \"" + signature + "\",\n" +
+                    "  \"algorithm\": \"ML-DSA-65\",\n" +
+                    "  \"signatureSize\": " + java.util.Base64.getDecoder().decode(signature).length + ",\n" +
+                    "  \"publicKey\": \"" + java.util.Base64.getEncoder().encodeToString(mldsaKeyPair.getPublic().getEncoded()) + "\"\n" +
+                    "}";
+                
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, response.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response.getBytes());
+                }
+                
+            } catch (Exception e) {
+                String error = "{\"error\": \"" + escapeJson(e.getMessage()) + "\"}";
+                exchange.sendResponseHeaders(500, error.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(error.getBytes());
+                }
+            }
+        }
+        
+        private String escapeJson(String str) {
+            if (str == null) return "";
+            return str.replace("\\", "\\\\")
+                     .replace("\"", "\\\"")
+                     .replace("\n", "\\n")
+                     .replace("\r", "\\r")
+                     .replace("\t", "\\t");
+        }
+    }
+    
+    /**
+     * Handler for the /pqc-verify endpoint.
+     * Verifies an ML-DSA-65 signature.
+     */
+    private static class PQCVerifyHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                String error = "{\"error\": \"Method not allowed. Use POST.\"}";
+                exchange.sendResponseHeaders(405, error.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(error.getBytes());
+                }
+                return;
+            }
+            
+            try {
+                // Read JSON from request body
+                String requestBody;
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(exchange.getRequestBody()))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    requestBody = sb.toString();
+                }
+                
+                // Simple JSON parsing (extract message and signature)
+                String message = extractJsonValue(requestBody, "message");
+                String signature = extractJsonValue(requestBody, "signature");
+                
+                if (message == null || signature == null) {
+                    String error = "{\"error\": \"Both 'message' and 'signature' fields are required\"}";
+                    exchange.sendResponseHeaders(400, error.getBytes().length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(error.getBytes());
+                    }
+                    return;
+                }
+                
+                // Verify the signature
+                boolean isValid = MLDSASignatureHelper.verifyString(message, signature, mldsaKeyPair.getPublic());
+                
+                // Build JSON response
+                String response = "{\n" +
+                    "  \"message\": \"" + escapeJson(message) + "\",\n" +
+                    "  \"valid\": " + isValid + ",\n" +
+                    "  \"algorithm\": \"ML-DSA-65\"\n" +
+                    "}";
+                
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, response.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response.getBytes());
+                }
+                
+            } catch (Exception e) {
+                String error = "{\"error\": \"" + escapeJson(e.getMessage()) + "\"}";
+                exchange.sendResponseHeaders(500, error.getBytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(error.getBytes());
+                }
+            }
+        }
+        
+        private String extractJsonValue(String json, String key) {
+            String searchKey = "\"" + key + "\"";
+            int keyIndex = json.indexOf(searchKey);
+            if (keyIndex == -1) return null;
+            
+            int colonIndex = json.indexOf(":", keyIndex);
+            if (colonIndex == -1) return null;
+            
+            int startQuote = json.indexOf("\"", colonIndex);
+            if (startQuote == -1) return null;
+            
+            int endQuote = json.indexOf("\"", startQuote + 1);
+            if (endQuote == -1) return null;
+            
+            return json.substring(startQuote + 1, endQuote);
+        }
+        
+        private String escapeJson(String str) {
+            if (str == null) return "";
+            return str.replace("\\", "\\\\")
+                     .replace("\"", "\\\"")
+                     .replace("\n", "\\n")
+                     .replace("\r", "\\r")
+                     .replace("\t", "\\t");
+        }
+    }
+    
     
     /**
      * Parse port number from command-line arguments.
@@ -344,6 +523,30 @@ public class PQCHttpsServer {
             System.out.println();
         }
     }
+    /**
+     * Ensure ML-DSA key pair exists, creating it if necessary.
+     * 
+     * @throws Exception if key generation or loading fails
+     */
+    private static void ensureMLDSAKeysExist() throws Exception {
+        File publicKeyFile = new File(MLDSA_PUBLIC_KEY_PATH);
+        File privateKeyFile = new File(MLDSA_PRIVATE_KEY_PATH);
+        
+        if (!publicKeyFile.exists() || !privateKeyFile.exists()) {
+            System.out.println("[PQCHttpsServer] ML-DSA keys not found, generating new ones...");
+            mldsaKeyPair = KeyStoreManager.generateMLDSAKeyPair();
+            KeyStoreManager.saveMLDSAKeyPair(mldsaKeyPair, MLDSA_PUBLIC_KEY_PATH, MLDSA_PRIVATE_KEY_PATH);
+            System.out.println();
+        } else {
+            System.out.println("[PQCHttpsServer] Loading existing ML-DSA keys...");
+            PublicKey publicKey = KeyStoreManager.loadMLDSAPublicKey(MLDSA_PUBLIC_KEY_PATH, "ML-DSA-65");
+            PrivateKey privateKey = KeyStoreManager.loadMLDSAPrivateKey(MLDSA_PRIVATE_KEY_PATH, "ML-DSA-65");
+            mldsaKeyPair = new KeyPair(publicKey, privateKey);
+            System.out.println("[PQCHttpsServer] ✓ ML-DSA keys loaded");
+            System.out.println();
+        }
+    }
+    
     
     /**
      * Setup shutdown hook for graceful server termination.
@@ -387,6 +590,9 @@ public class PQCHttpsServer {
             
             // Ensure keystores exist
             ensureKeystoresExist(javaHome);
+            
+            // Ensure ML-DSA keys exist
+            ensureMLDSAKeysExist();
             
             // Create and start server
             PQCHttpsServer server = new PQCHttpsServer(

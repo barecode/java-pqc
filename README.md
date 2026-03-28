@@ -1,21 +1,33 @@
-# Post-Quantum Cryptography in Java
+# Post-Quantum Cryptography in Java (Hybrid Approach)
 
-This project demonstrates quantum-resistant cryptography using ML-DSA (Module-Lattice-Based Digital Signature Algorithm) in Java, featuring both a signature demo and a REST/JSON HTTPS client-server for connectivity testing.
+This project demonstrates a **hybrid approach** to post-quantum cryptography using ML-DSA (Module-Lattice-Based Digital Signature Algorithm) in Java. It combines traditional ECDSA for TLS compatibility with ML-DSA-65 for quantum-resistant application-level security.
 
 ## Features
 
+✅ **Hybrid PQC Architecture** - ECDSA for TLS, ML-DSA for application layer
 ✅ **ML-DSA Digital Signatures** - Quantum-resistant signature generation and verification
-✅ **PQC HTTPS Server** - REST server with ML-DSA certificates
-✅ **PQC HTTPS Client** - Client that trusts ML-DSA certificates
+✅ **HTTPS Server** - REST server with ECDSA certificates and ML-DSA signing endpoints
+✅ **HTTPS Client** - Client demonstrating both TLS and ML-DSA operations
 ✅ **SSL/TLS Info Endpoint** - Returns comprehensive session details as JSON
+✅ **PQC Sign/Verify Endpoints** - Application-level ML-DSA-65 operations
 ✅ **Easy Testing** - Simple scripts for server, client, and end-to-end testing
 
 ## Overview
 
-- **Algorithm**: ML-DSA (formerly Dilithium)
+- **TLS Layer**: ECDSA (secp384r1) - Compatible with all clients
+- **Application Layer**: ML-DSA-65 - Quantum-resistant signatures
 - **JDK Version**: 25.0.2 (bundled)
-- **Standard**: NIST Post-Quantum Cryptography standardization
+- **Standard**: NIST FIPS 204 (ML-DSA)
 - **Transport**: HTTPS with TLSv1.3
+
+## Why Hybrid?
+
+Pure ML-DSA certificates don't work with current TLS implementations because ML-DSA is not yet integrated into the TLS handshake protocol. Our hybrid approach:
+- ✓ Uses ECDSA for TLS (works today)
+- ✓ Uses ML-DSA for application security (quantum-resistant)
+- ✓ Provides migration path for future TLS 1.3 PQC support
+
+See [HYBRID_APPROACH.md](HYBRID_APPROACH.md) and [SSL_HANDSHAKE_ANALYSIS.md](SSL_HANDSHAKE_ANALYSIS.md) for details.
 
 ## What is ML-DSA?
 
@@ -51,15 +63,27 @@ chmod +x *.sh
 ./start-client.sh
 ```
 
-## REST/JSON HTTPS Client-Server
+## REST/JSON HTTPS Client-Server (Hybrid Architecture)
 
 ### Architecture
 
-The project includes a complete HTTPS client-server implementation using ML-DSA certificates:
+The project implements a hybrid post-quantum cryptography approach:
 
-- **PQCHttpsServer**: HTTPS server with ML-DSA certificate
-- **PQCHttpsClient**: Client that trusts ML-DSA certificates
-- **Endpoint**: `GET /ssl-info` returns comprehensive SSL/TLS session information
+**TLS Layer (ECDSA)**:
+- HTTPS connection using ECDSA certificates
+- Compatible with all modern clients
+- Provides immediate deployment capability
+
+**Application Layer (ML-DSA-65)**:
+- Post-quantum signature operations
+- Quantum-resistant security
+- Demonstrates PQC capabilities
+
+**Endpoints**:
+- `GET /` - Server information
+- `GET /ssl-info` - SSL/TLS session details (shows ECDSA certificate)
+- `POST /pqc-sign` - Sign message with ML-DSA-65
+- `POST /pqc-verify` - Verify ML-DSA-65 signature
 
 ### Starting the Server
 
@@ -72,30 +96,37 @@ The project includes a complete HTTPS client-server implementation using ML-DSA 
 ```
 
 The server will:
-1. Generate ML-DSA certificates if they don't exist
-2. Create keystore and truststore
-3. Start HTTPS server on the specified port
-4. Expose endpoints:
+1. Generate ECDSA certificates if they don't exist (for TLS)
+2. Generate ML-DSA-65 key pair if it doesn't exist (for application signing)
+3. Create keystore and truststore
+4. Start HTTPS server on the specified port
+5. Expose endpoints:
    - `GET /` - Server information
    - `GET /ssl-info` - SSL/TLS session details
+   - `POST /pqc-sign` - Sign message with ML-DSA-65
+   - `POST /pqc-verify` - Verify ML-DSA-65 signature
 
 ### Running the Client
 
 ```bash
-# Default URL (https://localhost:8443/ssl-info)
+# Run full hybrid demonstration
 ./start-client.sh
-
-# Custom URL
-./start-client.sh https://localhost:9443/ssl-info
 ```
 
-### JSON Response Example
+The client will:
+1. Establish TLS connection using ECDSA certificate
+2. Retrieve SSL/TLS session information
+3. Test ML-DSA-65 signing (send message to server)
+4. Test ML-DSA-65 verification (verify signature)
+5. Test with tampered message (should fail verification)
 
-The `/ssl-info` endpoint returns comprehensive SSL/TLS session information:
+### API Examples
 
+#### GET /ssl-info - TLS Session Information
+Returns ECDSA certificate details:
 ```json
 {
-  "timestamp": "2026-03-28T02:45:00Z",
+  "timestamp": "2026-03-28T11:06:15Z",
   "server": {
     "port": 8443,
     "protocol": "TLSv1.3"
@@ -105,22 +136,48 @@ The `/ssl-info` endpoint returns comprehensive SSL/TLS session information:
     "protocol": "TLSv1.3"
   },
   "certificate": {
-    "algorithm": "ML-DSA-65",
+    "algorithm": "EC",
     "subject": "CN=localhost, O=PQC-HTTPS-Server, C=US",
     "issuer": "CN=localhost, O=PQC-HTTPS-Server, C=US",
-    "serialNumber": "1234567890",
-    "notBefore": "2026-03-28T00:00:00Z",
-    "notAfter": "2027-03-28T00:00:00Z",
-    "signatureAlgorithm": "ML-DSA-65",
-    "publicKeySize": 1952,
+    "signatureAlgorithm": "SHA384withECDSA",
+    "publicKeySize": 120,
     "version": 3
-  },
-  "session": {
-    "id": "abc123...",
-    "creationTime": 1234567890,
-    "peerHost": "127.0.0.1",
-    "peerPort": 54321
   }
+}
+```
+
+#### POST /pqc-sign - ML-DSA Signing
+Request:
+```bash
+curl -k -X POST https://localhost:8443/pqc-sign \
+  -d "Hello, Post-Quantum World!"
+```
+
+Response:
+```json
+{
+  "message": "Hello, Post-Quantum World!",
+  "signature": "bS8c+w2oq5tzvOwV2t8Q...",
+  "algorithm": "ML-DSA-65",
+  "signatureSize": 3309,
+  "publicKey": "MIIHsjALBglghkgBZQME..."
+}
+```
+
+#### POST /pqc-verify - ML-DSA Verification
+Request:
+```bash
+curl -k -X POST https://localhost:8443/pqc-verify \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello","signature":"..."}'
+```
+
+Response:
+```json
+{
+  "message": "Hello, Post-Quantum World!",
+  "valid": true,
+  "algorithm": "ML-DSA-65"
 }
 ```
 
@@ -272,7 +329,28 @@ Quantum computers pose a significant threat to current cryptographic systems. ML
 
 ## Documentation
 
-For detailed implementation information, see:
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Detailed implementation guide
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design decisions
+For detailed information, see:
+- [HYBRID_APPROACH.md](HYBRID_APPROACH.md) - **Complete hybrid architecture explanation**
+- [SSL_HANDSHAKE_ANALYSIS.md](SSL_HANDSHAKE_ANALYSIS.md) - **Why pure ML-DSA doesn't work**
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Implementation guide
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [PLAN_SUMMARY.md](PLAN_SUMMARY.md) - Executive summary
+
+## Security Model
+
+### TLS Layer (ECDSA)
+- **Algorithm**: ECDSA with secp384r1 curve
+- **Security**: Strong against classical computers
+- **Quantum Threat**: Vulnerable to Shor's algorithm (future threat)
+- **Purpose**: Provides immediate compatibility
+
+### Application Layer (ML-DSA-65)
+- **Algorithm**: ML-DSA-65 (NIST FIPS 204)
+- **Security**: Resistant to quantum attacks
+- **Signature Size**: 3,309 bytes
+- **Purpose**: Provides long-term quantum resistance
+
+### Combined Security
+- ✓ Works with existing infrastructure today
+- ✓ Application data protected by quantum-resistant signatures
+- ✓ Clear migration path to full PQC when TLS standards arrive

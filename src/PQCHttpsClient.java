@@ -242,6 +242,145 @@ public class PQCHttpsClient {
         System.out.println("\n=== SSL/TLS Session Information ===");
         System.out.println(json);
     }
+    /**
+     * Test ML-DSA signing by sending a message to the server.
+     * 
+     * @param message Message to sign
+     * @return JSON response with signature
+     * @throws Exception if request fails
+     */
+    public String testMLDSASign(String message) throws Exception {
+        System.out.println("\n[PQCHttpsClient] ========== Testing ML-DSA Signing ==========");
+        System.out.println("[PQCHttpsClient] Message: \"" + message + "\"");
+        
+        URL url = new URL("https://localhost:8443/pqc-sign");
+        HttpsURLConnection connection = null;
+        
+        try {
+            connection = (HttpsURLConnection) url.openConnection();
+            connection.setSSLSocketFactory(sslContext.getSocketFactory());
+            connection.setHostnameVerifier(LOCALHOST_VERIFIER);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setRequestProperty("Content-Type", "text/plain");
+            
+            // Send message
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(message.getBytes("UTF-8"));
+            }
+            
+            // Read response
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                StringBuilder response = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line).append("\n");
+                    }
+                }
+                
+                System.out.println("[PQCHttpsClient] ✓ ML-DSA signature received");
+                return response.toString();
+            } else {
+                throw new IOException("ML-DSA sign request failed with code: " + responseCode);
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+    
+    /**
+     * Test ML-DSA verification by sending a message and signature to the server.
+     * 
+     * @param message Original message
+     * @param signature Base64-encoded signature
+     * @return JSON response with verification result
+     * @throws Exception if request fails
+     */
+    public String testMLDSAVerify(String message, String signature) throws Exception {
+        System.out.println("\n[PQCHttpsClient] ========== Testing ML-DSA Verification ==========");
+        System.out.println("[PQCHttpsClient] Verifying signature...");
+        
+        URL url = new URL("https://localhost:8443/pqc-verify");
+        HttpsURLConnection connection = null;
+        
+        try {
+            connection = (HttpsURLConnection) url.openConnection();
+            connection.setSSLSocketFactory(sslContext.getSocketFactory());
+            connection.setHostnameVerifier(LOCALHOST_VERIFIER);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setRequestProperty("Content-Type", "application/json");
+            
+            // Build JSON request
+            String jsonRequest = "{\n" +
+                "  \"message\": \"" + message.replace("\"", "\\\"") + "\",\n" +
+                "  \"signature\": \"" + signature + "\"\n" +
+                "}";
+            
+            // Send request
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(jsonRequest.getBytes("UTF-8"));
+            }
+            
+            // Read response
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                StringBuilder response = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line).append("\n");
+                    }
+                }
+                
+                System.out.println("[PQCHttpsClient] ✓ ML-DSA verification complete");
+                return response.toString();
+            } else {
+                throw new IOException("ML-DSA verify request failed with code: " + responseCode);
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+    
+    /**
+     * Extract a JSON value from a simple JSON string.
+     */
+    private static String extractJsonValue(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex == -1) return null;
+        
+        int colonIndex = json.indexOf(":", keyIndex);
+        if (colonIndex == -1) return null;
+        
+        // Check if value is a boolean
+        String afterColon = json.substring(colonIndex + 1).trim();
+        if (afterColon.startsWith("true") || afterColon.startsWith("false")) {
+            return afterColon.startsWith("true") ? "true" : "false";
+        }
+        
+        int startQuote = json.indexOf("\"", colonIndex);
+        if (startQuote == -1) return null;
+        
+        int endQuote = json.indexOf("\"", startQuote + 1);
+        if (endQuote == -1) return null;
+        
+        return json.substring(startQuote + 1, endQuote);
+    }
+    
     
     /**
      * Main method to run the client.
@@ -274,13 +413,53 @@ public class PQCHttpsClient {
                 KeyStoreManager.getDefaultPassword()
             );
             
-            // Make request
+            // Make request to get SSL info
             String response = client.get(url);
             
             // Display response
             prettyPrintJSON(response);
             
-            System.out.println("\n✓ Client request successful!");
+            System.out.println("\n✓ TLS connection successful with ECDSA certificate!");
+            
+            // Now demonstrate ML-DSA signing at application level
+            System.out.println("\n=== Demonstrating Post-Quantum Cryptography ===");
+            System.out.println("Now testing ML-DSA-65 signatures at application level...\n");
+            
+            // Test ML-DSA signing
+            String testMessage = "Hello, Post-Quantum World!";
+            String signResponse = client.testMLDSASign(testMessage);
+            
+            // Extract signature from response
+            String signature = extractJsonValue(signResponse, "signature");
+            String signatureSize = extractJsonValue(signResponse, "signatureSize");
+            
+            System.out.println("\nML-DSA Signature Details:");
+            System.out.println("  - Algorithm: ML-DSA-65");
+            System.out.println("  - Signature size: " + signatureSize + " bytes");
+            System.out.println("  - Signature (first 64 chars): " + signature.substring(0, Math.min(64, signature.length())) + "...");
+            
+            // Test ML-DSA verification with correct signature
+            String verifyResponse = client.testMLDSAVerify(testMessage, signature);
+            String isValid = extractJsonValue(verifyResponse, "valid");
+            
+            System.out.println("\nML-DSA Verification:");
+            System.out.println("  - Original message: \"" + testMessage + "\"");
+            System.out.println("  - Signature valid: " + isValid);
+            
+            // Test with tampered message
+            String tamperedMessage = "Hello, Post-Quantum World?";
+            String tamperedVerifyResponse = client.testMLDSAVerify(tamperedMessage, signature);
+            String isTamperedValid = extractJsonValue(tamperedVerifyResponse, "valid");
+            
+            System.out.println("\nML-DSA Verification (Tampered Message):");
+            System.out.println("  - Tampered message: \"" + tamperedMessage + "\"");
+            System.out.println("  - Signature valid: " + isTamperedValid);
+            
+            System.out.println("\n" + "=".repeat(60));
+            System.out.println("✓ Hybrid PQC demonstration complete!");
+            System.out.println("  - TLS: ECDSA (traditional, compatible)");
+            System.out.println("  - Application: ML-DSA-65 (post-quantum secure)");
+            System.out.println("=".repeat(60));
             
         } catch (Exception e) {
             System.err.println("\n✗ Client request failed: " + e.getMessage());
